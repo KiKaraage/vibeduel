@@ -149,6 +149,7 @@ export namespace Session {
     async (input) => {
       const session = await createNext({
         directory: Instance.directory,
+        parentID: input.sessionID,
       })
       const msgs = await messages({ sessionID: input.sessionID })
       for (const msg of msgs) {
