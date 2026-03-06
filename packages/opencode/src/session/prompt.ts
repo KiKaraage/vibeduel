@@ -160,6 +160,10 @@ export namespace SessionPrompt {
     log.info("latency: before message creation", { timestamp: Date.now(), sessionID: input.sessionID })
     const message = await createUserMessage(input)
     await Session.touch(input.sessionID)
+    await generateTitleFromPrompt({
+      session,
+      parts: input.parts,
+    })
     log.info("latency: after message creation", { timestamp: Date.now(), sessionID: input.sessionID })
 
     // this is backwards compatibility for allowing `tools` to be specified when
@@ -1518,6 +1522,76 @@ export namespace SessionPrompt {
     })
 
     return result
+  }
+
+  async function generateTitleFromPrompt(input: { session: Session.Info; parts: PromptInput["parts"] }) {
+    if (input.session.parentID) {
+      const parent = await Session.get(input.session.parentID)
+      if (parent.title && !parent.title.startsWith("New session") && !parent.title.startsWith("Child session")) {
+        const newTitle = `${parent.title.split(" - ")[0]} - ${new Date().toISOString()}`
+        await Session.update(input.session.id, (draft) => {
+          draft.title = newTitle
+        })
+        return
+      }
+    }
+
+    const userTextPart = input.parts.find((p) => p.type === "text" && !("synthetic" in p && p.synthetic)) as
+      | { type: "text"; text: string }
+      | undefined
+    const userFilePart = input.parts.find((p) => p.type === "file") as { type: "file"; filename?: string } | undefined
+
+    let titlePrefix = ""
+
+    const isSymbolOnly = (word: string) => !/[a-zA-Z0-9\u00C0-\uFFFF]/.test(word)
+    const hasNumber = (word: string) => /\d/.test(word)
+    const trimPunctuation = (word: string) => word.replace(/^[^\w\u00C0-\uFFFF]+|[^\w\u00C0-\uFFFF]+$/g, "")
+
+    if (userTextPart?.text) {
+      let allWords = userTextPart.text.trim().split(/\s+/)
+
+      allWords = allWords
+        .map((w: string) => {
+          if (/^https?:\/\//i.test(w)) {
+            try {
+              const pathname = new URL(w).pathname
+              const segments = pathname.split("/").filter(Boolean)
+              const last = segments[segments.length - 1]
+              if (last) return last.replace(/\.[a-zA-Z0-9]+$/, "")
+            } catch {}
+          }
+          return trimPunctuation(w)
+        })
+        .filter(Boolean)
+
+      if (allWords.length === 0) {
+        if (userFilePart?.filename) {
+          const filename = userFilePart.filename.split("/").pop()!
+          titlePrefix = filename[0].toUpperCase() + filename.slice(1)
+        }
+      } else {
+        let count = 4
+        if (allWords[3] && isSymbolOnly(allWords[3])) count = 3
+        else if (allWords[2] && isSymbolOnly(allWords[2])) count = 5
+        else if (allWords.slice(0, 4).some(hasNumber)) count = 5
+
+        const words = allWords.slice(0, count)
+        const capitalized = words.map((w: string, i: number) =>
+          i === 0 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase(),
+        )
+        titlePrefix = capitalized.join(" ")
+      }
+    } else if (userFilePart?.filename) {
+      const filename = userFilePart.filename.split("/").pop()!
+      titlePrefix = filename[0].toUpperCase() + filename.slice(1)
+    }
+
+    if (titlePrefix) {
+      const newTitle = `${titlePrefix} - ${new Date().toISOString()}`
+      await Session.update(input.session.id, (draft) => {
+        draft.title = newTitle
+      })
+    }
   }
 
   async function ensureTitle(input: {
