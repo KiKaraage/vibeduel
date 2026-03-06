@@ -639,9 +639,19 @@ export function Session() {
 
                         // Navigate: the fork replaces the losing side
                         if (winner === "left") {
-                          navigate({ type: "session", sessionID: route.sessionID, rightSessionID: forkedID })
+                          navigate({
+                            type: "session",
+                            sessionID: route.sessionID,
+                            rightSessionID: forkedID,
+                            duelSessionId,
+                          })
                         } else {
-                          navigate({ type: "session", sessionID: forkedID, rightSessionID: route.rightSessionID })
+                          navigate({
+                            type: "session",
+                            sessionID: forkedID,
+                            rightSessionID: route.rightSessionID,
+                            duelSessionId,
+                          })
                         }
                       }
                       setPendingForkWinner(undefined)

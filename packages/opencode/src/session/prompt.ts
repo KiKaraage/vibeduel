@@ -1525,10 +1525,17 @@ export namespace SessionPrompt {
   }
 
   async function generateTitleFromPrompt(input: { session: Session.Info; parts: PromptInput["parts"] }) {
+    if (!Session.isDefaultTitle(input.session.title)) {
+      return
+    }
+
     if (input.session.parentID) {
-      const parent = await Session.get(input.session.parentID)
-      if (parent.title && !parent.title.startsWith("New session") && !parent.title.startsWith("Child session")) {
-        const newTitle = `${parent.title.split(" - ")[0]} - ${new Date().toISOString()}`
+      let rootSession = input.session
+      while (rootSession.parentID) {
+        rootSession = await Session.get(rootSession.parentID)
+      }
+      if (rootSession.title && !Session.isDefaultTitle(rootSession.title)) {
+        const newTitle = `${rootSession.title.split(" - ")[0]} - ${new Date().toISOString()}`
         await Session.update(input.session.id, (draft) => {
           draft.title = newTitle
         })
